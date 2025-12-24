@@ -2,11 +2,9 @@
 
 import express from "express";
 import dotenv from "dotenv";
-import pkg from "pg";
+import mongoose from "mongoose";
 import path from "path";
 import { fileURLToPath } from "url";
-
-const { Pool } = pkg;
 
 dotenv.config();
 
@@ -17,21 +15,72 @@ const PORT = process.env.PORT || 5000;
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// ------------------- DB -------------------
-if (!process.env.DB_URL) {
-    console.error("❌ DB_URL not found in .env");
+// ------------------- DB CONNECTION -------------------
+if (!process.env.MONGODB_URL) {
+    console.error("❌ MONGODB_URL not found in .env");
     process.exit(1);
 }
 
-const pool = new Pool({
-    connectionString: process.env.DB_URL,
+mongoose.connect(process.env.MONGODB_URL);
+
+mongoose.connection.on('connected', () => {
+    console.log('✅ MongoDB connected');
 });
 
-// Helper function to execute queries
-async function query(text, params) {
-    const result = await pool.query(text, params);
-    return result.rows;
-}
+mongoose.connection.on('error', (err) => {
+    console.error('❌ MongoDB connection error:', err);
+});
+
+// ------------------- SCHEMAS -------------------
+const userSchema = new mongoose.Schema({
+    username: {
+        type: String,
+        unique: true,
+        required: true
+    },
+    password: {
+        type: String,
+        required: true
+    },
+    role: {
+        type: String,
+        required: true
+    },
+    createdAt: {
+        type: Date,
+        default: Date.now
+    }
+});
+
+const appointmentSchema = new mongoose.Schema({
+    patientName: {
+        type: String,
+        required: true
+    },
+    doctor: {
+        type: String,
+        required: true
+    },
+    date: {
+        type: String,
+        required: true
+    },
+    slot: {
+        type: String,
+        required: true
+    },
+    username: {
+        type: String,
+        required: true
+    },
+    createdAt: {
+        type: Date,
+        default: Date.now
+    }
+});
+
+const User = mongoose.model('User', userSchema);
+const Appointment = mongoose.model('Appointment', appointmentSchema);
 
 // ------------------- MIDDLEWARE -------------------
 app.use(express.json());
@@ -52,19 +101,14 @@ app.post("/api/register", async (req, res) => {
             return res.status(400).json({ message: "Username and password required" });
         }
 
-        const existing = await query(
-            "SELECT id FROM users WHERE username = $1",
-            [username]
-        );
+        const existing = await User.findOne({ username });
 
-        if (existing.length > 0) {
+        if (existing) {
             return res.status(400).json({ message: "Username already exists" });
         }
 
-        await query(
-            "INSERT INTO users (username, password, role) VALUES ($1, $2, $3)",
-            [username, password, 'user']
-        );
+        const newUser = new User({ username, password, role: 'user' });
+        await newUser.save();
 
         res.status(201).json({ message: "Registered successfully" });
 
@@ -79,12 +123,9 @@ app.post("/api/login", async (req, res) => {
     try {
         const { username, password, role } = req.body;
 
-        const rows = await query(
-            "SELECT id FROM users WHERE username = $1 AND password = $2 AND role = $3",
-            [username, password, role]
-        );
+        const user = await User.findOne({ username, password, role });
 
-        if (rows.length === 0) {
+        if (!user) {
             return res.status(401).json({ message: "Invalid credentials" });
         }
 
@@ -105,19 +146,20 @@ app.post("/api/appointments", async (req, res) => {
             return res.status(400).json({ message: "All fields required" });
         }
 
-        const existing = await query(
-            "SELECT id FROM appointments WHERE doctor = $1 AND date = $2 AND slot = $3",
-            [doctor, date, slot]
-        );
+        const existing = await Appointment.findOne({ doctor, date, slot });
 
-        if (existing.length > 0) {
+        if (existing) {
             return res.status(400).json({ message: "Slot already booked" });
         }
 
-        await query(
-            "INSERT INTO appointments (patient_name, doctor, date, slot, username) VALUES ($1, $2, $3, $4, $5)",
-            [patient, doctor, date, slot, username]
-        );
+        const newAppointment = new Appointment({
+            patientName: patient,
+            doctor,
+            date,
+            slot,
+            username
+        });
+        await newAppointment.save();
 
         res.status(201).json({ message: "Appointment booked" });
 
@@ -132,20 +174,26 @@ app.get("/api/appointments", async (req, res) => {
     try {
         const { username } = req.query;
 
-        let rows;
+        let appointments;
         if (username) {
-            rows = await query(
-                "SELECT doctor, date, slot FROM appointments WHERE username = $1 ORDER BY date, slot",
-                [username]
-            );
+            appointments = await Appointment.find({ username })
+                .sort({ date: 1, slot: 1 })
+                .select('doctor date slot');
         } else {
-            rows = await query(
-                "SELECT patient_name AS patient, doctor, date, slot FROM appointments ORDER BY date, slot",
-                []
-            );
+            appointments = await Appointment.find({})
+                .sort({ date: 1, slot: 1 })
+                .select('patientName doctor date slot');
         }
 
-        res.json(rows);
+        // Transform for consistent response format
+        const response = appointments.map(apt => ({
+            patient: apt.patientName,
+            doctor: apt.doctor,
+            date: apt.date,
+            slot: apt.slot
+        }));
+
+        res.json(response);
 
     } catch (err) {
         console.error("FETCH ERROR:", err);
