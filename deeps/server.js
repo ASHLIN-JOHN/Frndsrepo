@@ -2,9 +2,11 @@
 
 import express from "express";
 import dotenv from "dotenv";
-import { neon } from "@neondatabase/serverless";
+import pkg from "pg";
 import path from "path";
 import { fileURLToPath } from "url";
+
+const { Pool } = pkg;
 
 dotenv.config();
 
@@ -21,7 +23,15 @@ if (!process.env.DB_URL) {
     process.exit(1);
 }
 
-const sql = neon(process.env.DB_URL);
+const pool = new Pool({
+    connectionString: process.env.DB_URL,
+});
+
+// Helper function to execute queries
+async function query(text, params) {
+    const result = await pool.query(text, params);
+    return result.rows;
+}
 
 // ------------------- MIDDLEWARE -------------------
 app.use(express.json());
@@ -42,17 +52,19 @@ app.post("/api/register", async (req, res) => {
             return res.status(400).json({ message: "Username and password required" });
         }
 
-        const existing =
-            await sql`SELECT id FROM users WHERE username = ${username}`;
+        const existing = await query(
+            "SELECT id FROM users WHERE username = $1",
+            [username]
+        );
 
         if (existing.length > 0) {
             return res.status(400).json({ message: "Username already exists" });
         }
 
-        await sql`
-            INSERT INTO users (username, password, role)
-            VALUES (${username}, ${password}, 'user')
-        `;
+        await query(
+            "INSERT INTO users (username, password, role) VALUES ($1, $2, $3)",
+            [username, password, 'user']
+        );
 
         res.status(201).json({ message: "Registered successfully" });
 
@@ -67,12 +79,10 @@ app.post("/api/login", async (req, res) => {
     try {
         const { username, password, role } = req.body;
 
-        const rows = await sql`
-            SELECT id FROM users
-            WHERE username = ${username}
-              AND password = ${password}
-              AND role = ${role}
-        `;
+        const rows = await query(
+            "SELECT id FROM users WHERE username = $1 AND password = $2 AND role = $3",
+            [username, password, role]
+        );
 
         if (rows.length === 0) {
             return res.status(401).json({ message: "Invalid credentials" });
@@ -95,21 +105,19 @@ app.post("/api/appointments", async (req, res) => {
             return res.status(400).json({ message: "All fields required" });
         }
 
-        const existing = await sql`
-            SELECT id FROM appointments
-            WHERE doctor = ${doctor}
-              AND date = ${date}
-              AND slot = ${slot}
-        `;
+        const existing = await query(
+            "SELECT id FROM appointments WHERE doctor = $1 AND date = $2 AND slot = $3",
+            [doctor, date, slot]
+        );
 
         if (existing.length > 0) {
             return res.status(400).json({ message: "Slot already booked" });
         }
 
-        await sql`
-            INSERT INTO appointments (patient_name, doctor, date, slot, username)
-            VALUES (${patient}, ${doctor}, ${date}, ${slot}, ${username})
-        `;
+        await query(
+            "INSERT INTO appointments (patient_name, doctor, date, slot, username) VALUES ($1, $2, $3, $4, $5)",
+            [patient, doctor, date, slot, username]
+        );
 
         res.status(201).json({ message: "Appointment booked" });
 
@@ -126,18 +134,15 @@ app.get("/api/appointments", async (req, res) => {
 
         let rows;
         if (username) {
-            rows = await sql`
-                SELECT doctor, date, slot
-                FROM appointments
-                WHERE username = ${username}
-                ORDER BY date, slot
-            `;
+            rows = await query(
+                "SELECT doctor, date, slot FROM appointments WHERE username = $1 ORDER BY date, slot",
+                [username]
+            );
         } else {
-            rows = await sql`
-                SELECT patient_name AS patient, doctor, date, slot
-                FROM appointments
-                ORDER BY date, slot
-            `;
+            rows = await query(
+                "SELECT patient_name AS patient, doctor, date, slot FROM appointments ORDER BY date, slot",
+                []
+            );
         }
 
         res.json(rows);
