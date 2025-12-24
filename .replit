@@ -9,7 +9,7 @@ expertMode = true
 [userenv]
 
 [userenv.shared]
-MONGODB_URL = "mongodb+srv://ashlinjohnj:5SMJdTSdLKt72Zsv@appointment.y5q9g5z.mongodb.net/?appName=Appointment"
+MONGODB_URL = "mongodb+srv://ashlinjohn:ashlin@appointment.y5q9g5z.mongodb.net/?appName=Appointment"
 
 [workflows]
 runButton = "Project"
