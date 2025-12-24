@@ -1,0 +1,22 @@
+Node.js Dependencies for Doctor Appointment System
+
+Runtime Requirements:
+- Node.js v20+
+- npm (comes with Node.js)
+
+npm Packages:
+- express@^5.2.1 - Web framework for Node.js
+- dotenv@^17.2.3 - Environment variable management
+- pg@^8.0.0 - PostgreSQL database driver
+
+Database:
+- PostgreSQL database (Replit managed)
+
+Installation:
+1. Install Node.js v20 or higher
+2. Run: npm install
+3. Set up .env file with DB_URL
+4. Start server: npm start
+
+Port:
+- Server runs on port 5000
